@@ -18,6 +18,7 @@
 
 # <pep8 compliant>
 
+import pprint
 import os
 import bpy
 import bmesh
@@ -176,15 +177,14 @@ def load(self, context,
         if mat is None:
             print("Adding material '%s'" % material.name)
             mat = bpy.data.materials.new(name=material.name)
+            mat.use_nodes = True
 
             # mat.diffuse_shader = 'LAMBERT'
             # mat.specular_shader = 'PHONG'
 
             # Load the textures for this material - TODO: Cycles Support
             if load_images:
-                # Load the actual image files
-                # Color maps get deferred to after the other textures
-                deferred_textures = []
+                bsdf = mat.node_tree.nodes['Principled BSDF']
                 for image_type, image_name in material.images.items():
                     if image_name not in material_images:
                         search_dir = os.path.dirname(filepath)
@@ -207,45 +207,22 @@ def load(self, context,
                     else:
                         image = None
 
-                    # Create the texture - We exclude the extension in the
-                    #  texture name
-                    texture_name = os.path.splitext(image_name)[0]
-                    if texture_name in bpy.data.textures:
-                        tex = bpy.data.textures[texture_name]
-                    else:
-                        tex = bpy.data.textures.new(texture_name, 'IMAGE')
-                        tex.image = image
+                    if image is not None:
+                        # pp = pprint.PrettyPrinter(indent=4)
+                        # print('image_type:')
+                        # pp.pprint(image_type)
+                        textureNode = mat.node_tree.nodes.new('ShaderNodeTexImage')
+                        textureNode.image = image
 
-                    if image_type == 'color':
-                        deferred_textures.append(tex)
-                        continue
-                    else:
-                        slot = mat.texture_slots.add()
-                        slot.texture = tex
-                        slot.use_map_color_diffuse = False
-                        slot.use_map_alpha = False
-                        if image_type == 'normal':
-                            slot.normal_factor = True
-
-                # Add the deferred_textures
-                for tex in deferred_textures:
-                    slot = mat.texture_slots.add()
-                    slot.texture = tex
-                    slot.use_map_color_diffuse = True
-                    if tex.image is not None and tex.image.channels > 3:
-                        # Enable Transparency
-                        slot.use_map_alpha = True
-                        slot.alpha_factor = 1.0
-                        # NOTE: Decide when use_transparency is needed
-                        #       I haven't been able to figure out a way
-                        #        to deterime this
-                        mat.use_transparency = True
-                        mat.transparency_method = 'Z_TRANSPARENCY'
-                        # Prevent specular from showing on transparent parts
-                        # NOTE: 'RAYTRACE' transparency_method has specular
-                        #        highlights show up regardless
-                        mat.specular_alpha = 0.0
-                    mat.alpha = 0
+                        if image_type == 'color':
+                            textureNode.image.colorspace_settings.name = 'sRGB'
+                            mat.node_tree.links.new(bsdf.inputs['Base Color'], textureNode.outputs['Color'])
+                        else:
+                            textureNode.image.colorspace_settings.name = 'Non-Color'
+                            if image_type == 'normal':
+                                normalMapNode = mat.node_tree.nodes.new('ShaderNodeNormalMap')
+                                mat.node_tree.links.new(normalMapNode.inputs['Color'], textureNode.outputs['Color'])
+                                mat.node_tree.links.new(bsdf.inputs['Normal'], normalMapNode.outputs['Normal'])
 
         else:
             if mat not in materials:
@@ -310,8 +287,8 @@ def load(self, context,
                 loop[uv_layer].uv = uv
                 # Vertex Colors
                 if use_vertex_colors:
-                    loop[vert_color_layer] = face_index_loop.color[:3]
-                    loop[vert_alpha_layer] = [face_index_loop.color[3]] * 3
+                    loop[vert_color_layer] = face_index_loop.color[:4]
+                    loop[vert_alpha_layer] = [face_index_loop.color[3]] * 4
             used_faces.append(face)
 
         unused_faces = []
@@ -421,7 +398,6 @@ def load(self, context,
 
             mesh.normals_split_custom_set(tuple(zip(*(iter(clnors),) * 3)))
             mesh.use_auto_smooth = True
-            mesh.show_edge_sharp = True
 
         else:
             mesh.validate()
@@ -442,40 +418,25 @@ def load(self, context,
         obj = bpy.data.objects.new(obj_name, mesh)
         mesh_objs.append(obj)
 
-        scene.objects.link(obj)
-        scene.objects.active = obj
+        scene.collection.objects.link(obj)
+        bpy.context.view_layer.objects.active = obj
 
         # Create Vertex Groups
         # These automatically weight the verts based on the deform groups
         for bone in model.bones:
-            obj.vertex_groups.new(bone.name.lower())
-
-        # Assign the texture images to the current mesh (for Texture view)
-        if load_images:
-            # Build a material_id to Blender image map
-            material_image_map = [None] * len(model.materials)
-            for index, material in enumerate(model.materials):
-                if 'color' in material.images:
-                    color_map = material.images['color']
-                    if color_map in bpy.data.images:
-                        material_image_map[index] = bpy.data.images[color_map]
-
-            # Assign the image for each face
-            uv_faces = mesh.uv_textures[0].data
-            for index, face in enumerate(used_faces):
-                uv_faces[index].image = material_image_map[face.material_id]
+            obj.vertex_groups.new(name=bone.name.lower())
 
     if use_armature:
         # Create the skeleton
         armature = bpy.data.armatures.new("%s_amt" % model.name)
-        armature.draw_type = "STICK"
+        armature.display_type = "STICK"
 
         skel_obj = bpy.data.objects.new("%s_skel" % model.name, armature)
-        skel_obj.show_x_ray = True
+        skel_obj.show_in_front = True
 
         # Add the skeleton object to the scene
-        scene.objects.link(skel_obj)
-        scene.objects.active = skel_obj
+        scene.collection.objects.link(skel_obj)
+        bpy.context.view_layer.objects.active = skel_obj
 
         bpy.ops.object.mode_set(mode='EDIT')
 
