@@ -177,6 +177,7 @@ def load(self, context,
         if mat is None:
             print("Adding material '%s'" % material.name)
             mat = bpy.data.materials.new(name=material.name)
+            mat.use_nodes = True
 
             # mat.diffuse_shader = 'LAMBERT'
             # mat.specular_shader = 'PHONG'
@@ -184,8 +185,7 @@ def load(self, context,
             # Load the textures for this material - TODO: Cycles Support
             if load_images:
                 # Load the actual image files
-                # Color maps get deferred to after the other textures
-                deferred_textures = []
+                bsdf = mat.node_tree.nodes['Principled BSDF']
                 for image_type, image_name in material.images.items():
                     if image_name not in material_images:
                         search_dir = os.path.dirname(filepath)
@@ -208,51 +208,22 @@ def load(self, context,
                     else:
                         image = material_images[image_name]
 
-                    # DEPRECATED
-                    '''
-                    # Create the texture - We exclude the extension in the
-                    #  texture name
-                    texture_name = os.path.splitext(image_name)[0]
-                    if texture_name in bpy.data.textures:
-                        tex = bpy.data.textures[texture_name]
-                    else:
-                        tex = bpy.data.textures.new(texture_name, 'IMAGE')
-                        tex.image = image
+                    if image is not None:
+                        print("Image is NOT none: %s" % image_name)
+                        textureNode = mat.node_tree.nodes.new('ShaderNodeTexImage')
+                        textureNode.image = image
 
-                    if image_type == 'color':
-                        deferred_textures.append(tex)
-                        continue
+                        if image_type == 'color':
+                            textureNode.image.colorspace_settings.name = 'sRGB'
+                            mat.node_tree.links.new(bsdf.inputs['Base Color'], textureNode.outputs['Color'])
+                        else:
+                            textureNode.image.colorspace_settings.name = 'Non-Color'
+                            if image_type == 'normal':
+                                normalMapNode = mat.node_tree.nodes.new('ShaderNodeNormalMap')
+                                mat.node_tree.links.new(normalMapNode.inputs['Color'], textureNode.outputs['Color'])
+                                mat.node_tree.links.new(bsdf.inputs['Normal'], normalMapNode.outputs['Normal'])
                     else:
-                        slot = mat.texture_slots.add()
-                        slot.texture = tex
-                        slot.use_map_color_diffuse = False
-                        slot.use_map_alpha = False
-                        if image_type == 'normal':
-                            slot.normal_factor = True
-                    '''
-
-                # DEPRECATED
-                '''
-                # Add the deferred_textures
-                for tex in deferred_textures:
-                    slot = mat.texture_slots.add()
-                    slot.texture = tex
-                    slot.use_map_color_diffuse = True
-                    if tex.image is not None and tex.image.channels > 3:
-                        # Enable Transparency
-                        slot.use_map_alpha = True
-                        slot.alpha_factor = 1.0
-                        # NOTE: Decide when use_transparency is needed
-                        #       I haven't been able to figure out a way
-                        #        to deterime this
-                        mat.use_transparency = True
-                        mat.transparency_method = 'Z_TRANSPARENCY'
-                        # Prevent specular from showing on transparent parts
-                        # NOTE: 'RAYTRACE' transparency_method has specular
-                        #        highlights show up regardless
-                        mat.specular_alpha = 0.0
-                    mat.alpha = 0
-                '''
+                        print("Image is none: %s" % image_name)
 
         else:
             if mat not in materials:
