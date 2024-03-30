@@ -36,14 +36,14 @@ import os
 bl_info = {
     "name": "Blender-CoD",
     "author": "CoDEmanX, Flybynyt, SE2Dev",
-    "version": (0, 7, 0),
-    "blender": (2, 90, 0),
+    "version": (1, 7, 0),
+    "blender": (4, 1, 0),
     "location": "File > Import  |  File > Export",
     "description": "Import-Export XModel_Export, XAnim_Export",
     "warning": "Alpha version, please report any bugs!",
     "wiki_url": "http://wiki.blender.org/index.php/Extensions:2.6/Py/Scripts/Import-Export/Call_of_Duty_IO",  # nopep8
     "tracker_url": "http://projects.blender.org/tracker/index.php?func=detail&aid=30482",  # nopep8
-    "support": "TESTING",
+    "support": "COMMUNITY",
     "category": "Import-Export"
 }
 
